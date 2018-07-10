@@ -3,8 +3,9 @@ package fpinscala.testing
 //import fpinscala.laziness.Stream
 //import fpinscala.parallelism._
 //import fpinscala.parallelism.Par.Par
-import fpinscala.testing.State._
 
+import State._
+import RNG._
 import Gen._
 import Prop._
 import java.util.concurrent.{Executors,ExecutorService}
@@ -22,10 +23,17 @@ object Prop {
 }
 
 object Gen {
-  def unit[A](a: => A): Gen[A] = ???
+  // Ex 8.5
+  def unit[A](a: => A): Gen[A] = Gen(State.unit(a))
+
+  // Ex 8.4
+  def choose(start: Int, stopExclusive: Int): Gen[Int] = 
+    Gen(State(RNG.nonNegativeInt).map( n=> n % (stopExclusive-start)+start))
+
 }
 
-trait Gen[A] {
+case class Gen[A](sample: State[RNG,A]) {
+  //trait Gen[A] {
   def map[A,B](f: A => B): Gen[B] = ???
   def flatMap[A,B](f: A => Gen[B]): Gen[B] = ???
 }
