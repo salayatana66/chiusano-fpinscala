@@ -9,23 +9,89 @@ import RNG._
 import Gen._
 import Prop._
 import java.util.concurrent.{Executors,ExecutorService}
+import Stream._
 
 /*
 The library developed in this chapter goes through several iterations. This file is just the
 shell, which you can fill in and modify while working through the chapter.
 */
 
-case class Prop(run: TestCases => Result) {
-// trait Prop {
+case class Prop(run: (TestCases,RNG) => Result, tag : String = null) {
+  // to add a tagging functionality
+  def addTag(s : String) = {
+    val newTag = if(tag == null) s else tag +
+    '\n' + s
+
+    Prop((n,rng) => run(n,rng) match {
+      case Passed => Passed
+      case Falsified(msg,i) => Falsified(newTag+msg,i)
+    }, newTag)
+  }
+
+  def reTag(s : String) = Prop((n,rng) => run(n,rng) match {
+    case Passed => Passed
+    case Falsified(msg,i) => Falsified(s+msg,i)
+  },s)
+
+
+  // Ex 8.9
+  // lazy and
+  def &&(p: Prop) = Prop {
+    (n,rng) =>run(n,rng) match {
+        case r1 : Falsified => r1
+        case _ => p.run(n,rng) 
+      }
+  }
+  
+  // lazy or => defaults to r1 failure in case of failure
+  def ||(p: Prop) = Prop {
+    (n,rng) => run(n,rng) match {
+        case Passed => Passed
+        case Falsified(msg,j) => p.run(n,rng) match {
+          case Passed => Passed
+          case Falsified(msg2,i) => Falsified(msg+msg2,if(i<j) i else j)
+        }
+    }
+  }
+        
 }
 
 object Prop {
   type FailedCase = String
   type SuccessCount = Int
   type TestCases = Int
-  type Result = Option[(FailedCase, SuccessCount)]
 
-  def forAll[A](gen: Gen[A])(f: A => Boolean): Prop = ???
+  sealed trait Result {
+    def isFalsified: Boolean
+  }
+
+  case object Passed extends Result {
+    def isFalsified = false
+  }
+
+  case class Falsified(failure: FailedCase,
+    successes: SuccessCount) extends Result {
+    def isFalsified = true
+  }
+
+
+  def forAll[A](gen: Gen[A])(f: A => Boolean): Prop = Prop {
+    (n,rng) => randomStream(gen)(rng).zip(Stream.from(0)).take(n).map {
+      case (a, i) => try {
+        if (f(a)) Passed else Falsified(a.toString , i)
+      } catch { case e: Exception => Falsified(buildMsg(a, e), i) }
+
+    }.find(_.isFalsified).getOrElse(Passed)
+      
+  }
+
+  def randomStream[A](g: Gen[A])(rng: RNG): Stream[A] =
+    Stream.unfold(rng)(rng => Some(g.sample.run(rng)))
+
+  def buildMsg[A](s: A, e: Exception): String =
+    s"test case: $s\n" +
+  s"generated an exception: ${e.getMessage}\n" +
+  s"stack trace:\n ${e.getStackTrace.mkString("\n")}"
 }
 
 object Gen {
