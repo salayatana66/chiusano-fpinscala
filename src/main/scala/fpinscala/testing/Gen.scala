@@ -16,23 +16,14 @@ The library developed in this chapter goes through several iterations. This file
 shell, which you can fill in and modify while working through the chapter.
 */
 
-case class Prop(run: (TestCases,RNG) => Result, tag : String = null) {
+case class Prop(run: (TestCases,RNG) => Result) {
   // to add a tagging functionality
-  def addTag(s : String) = {
-    val newTag = if(tag == null) s else tag +
-    '\n' + s
-
-    Prop((n,rng) => run(n,rng) match {
+  def addTag(s : String) = Prop {
+    (n,rng) => run(n,rng) match {
+      case Falsified(msg,i) => Falsified(s+"\n"+msg,i)
       case Passed => Passed
-      case Falsified(msg,i) => Falsified(newTag+msg,i)
-    }, newTag)
+    }
   }
-
-  def reTag(s : String) = Prop((n,rng) => run(n,rng) match {
-    case Passed => Passed
-    case Falsified(msg,i) => Falsified(s+msg,i)
-  },s)
-
 
   // Ex 8.9
   // lazy and
@@ -49,7 +40,7 @@ case class Prop(run: (TestCases,RNG) => Result, tag : String = null) {
         case Passed => Passed
         case Falsified(msg,j) => p.run(n,rng) match {
           case Passed => Passed
-          case Falsified(msg2,i) => Falsified(msg+msg2,if(i<j) i else j)
+          case Falsified(msg2,i) => Falsified(msg+"\n"+msg2,if(i<j) i else j)
         }
     }
   }
