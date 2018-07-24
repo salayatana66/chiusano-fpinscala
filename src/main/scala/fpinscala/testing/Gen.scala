@@ -16,10 +16,10 @@ The library developed in this chapter goes through several iterations. This file
 shell, which you can fill in and modify while working through the chapter.
 */
 
-case class Prop(run: (TestCases,RNG) => Result) {
+case class Prop(run: (MaxSize,TestCases,RNG) => Result) {
   // to add a tagging functionality
   def addTag(s : String) = Prop {
-    (n,rng) => run(n,rng) match {
+    (mx,n,rng) => run(mx,n,rng) match {
       case Falsified(msg,i) => Falsified(s+"\n"+msg,i)
       case Passed => Passed
     }
@@ -28,17 +28,17 @@ case class Prop(run: (TestCases,RNG) => Result) {
   // Ex 8.9
   // lazy and
   def &&(p: Prop) = Prop {
-    (n,rng) =>run(n,rng) match {
+    (mx,n,rng) =>run(mx,n,rng) match {
         case r1 : Falsified => r1
-        case _ => p.run(n,rng) 
+        case _ => p.run(mx,n,rng) 
       }
   }
   
   // lazy or => defaults to r1 failure in case of failure
   def ||(p: Prop) = Prop {
-    (n,rng) => run(n,rng) match {
+    (mx,n,rng) => run(mx,n,rng) match {
         case Passed => Passed
-        case Falsified(msg,j) => p.run(n,rng) match {
+        case Falsified(msg,j) => p.run(mx,n,rng) match {
           case Passed => Passed
           case Falsified(msg2,i) => Falsified(msg+"\n"+msg2,if(i<j) i else j)
         }
@@ -51,6 +51,7 @@ object Prop {
   type FailedCase = String
   type SuccessCount = Int
   type TestCases = Int
+  type MaxSize = Int
 
   sealed trait Result {
     def isFalsified: Boolean
@@ -66,8 +67,22 @@ object Prop {
   }
 
 
-  def forAll[A](gen: Gen[A])(f: A => Boolean): Prop = Prop {
-    (n,rng) => randomStream(gen)(rng).zip(Stream.from(0)).take(n).map {
+def forAll[A](g: SGen[A])(f: A => Boolean): Prop = forAll(g(_))(f)
+
+  def forAll[A](g: Int => Gen[A])(f: A => Boolean): Prop = Prop {
+    (max,n,rng) => {
+    val casesPerSize = (n + (max - 1)) / max
+      val props: Stream[Prop] = Stream.from(0).take((n min max) + 1).map(i => forAll(g(i))(f))
+      val prop: Prop =
+     props.map(p => Prop { (max, _, rng) =>
+    p.run(max, casesPerSize, rng)
+     }).toList.reduce(_ && _)
+     prop.run(max,n,rng)
+    }
+  }
+
+   def forAll[A](gen: Gen[A])(f: A => Boolean): Prop = Prop {
+    (mx,n,rng) => randomStream(gen)(rng).zip(Stream.from(0)).take(n).map {
       case (a, i) => try {
         if (f(a)) Passed else Falsified(a.toString , i)
       } catch { case e: Exception => Falsified(buildMsg(a, e), i) }
@@ -111,9 +126,30 @@ case class Gen[A](sample: State[RNG,A]) {
   def flatMap[B](f: A => Gen[B]): Gen[B] = Gen(sample.
     flatMap(f(_).sample))
   def listOfN(size: Gen[Int]): Gen[List[A]] = size.flatMap(Gen.listOfN(_,this))
+    // Ex 8.10
+  def unsized: SGen[A] = SGen(_ => this)
+
 }
 
-trait SGen[+A] {
+case class SGen[+A](forSize: Int => Gen[A]) {
+  // Ex 8.11
+  def map[B](f: A => B): SGen[B] = SGen(this(_).map(f))
+  // In this example the size complexity gets passed down
+  def flatMap[B](f: A => SGen[B]): SGen[B] = SGen(n => this(n).flatMap(f(_).forSize(n)))
+  // similarly size complexity gets passed down
+  def listOfN(size: SGen[Int]): SGen[List[A]] = SGen(n => size.forSize(n).
+    flatMap(Gen.listOfN(_,this(n))))
+  // apply 
+  def apply(n: Int) : Gen[A] = forSize(n)
 
 }
+
+object SGen {
+  // Ex 8.12
+  def listOf[A](g: Gen[A]): SGen[List[A]] = SGen(
+   n => g.listOfN { Gen.unit(n) }
+  )
+}
+
+
 
