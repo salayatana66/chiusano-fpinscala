@@ -98,6 +98,26 @@ def forAll[A](g: SGen[A])(f: A => Boolean): Prop = forAll(g(_))(f)
     s"test case: $s\n" +
   s"generated an exception: ${e.getMessage}\n" +
   s"stack trace:\n ${e.getStackTrace.mkString("\n")}"
+
+  def run(p: Prop, maxSize: Int = 100, testCases: Int = 100,
+    rng: RNG = RNG.Simple(System.currentTimeMillis)): Unit =
+    p.run(maxSize, testCases, rng) match {
+      case Falsified(msg, n) =>
+        println(s"! Falsified after $n passed tests:\n $msg")
+      case Passed =>
+        println(s"+ OK, passed $testCases tests.")
+    }
+  val smallInt = Gen.choose(-10,10)
+  // Ex 8.14
+  val sortedListProperty = forAll(smallInt.listOf1(smallInt)) {
+    ns => {
+      val lmax = ns.max
+      val lmin = ns.min
+      val lsorted = ns.sorted
+
+      ( lmax == lsorted.last ) && ( lmin == lsorted.head)
+    }
+  }
 }
 
 object Gen {
@@ -105,7 +125,8 @@ object Gen {
   def unit[A](a: => A): Gen[A] = Gen(State.unit(a))
   def boolean: Gen[Boolean] = choose(0,2).map(_ == 0)
   def listOfN[A](n: Int, g: Gen[A]): Gen[List[A]] = Gen(State.sequence(List.fill(n)(g.sample)))
-
+  // Ex 8.13
+  def listOf1[A](n: Int, g: Gen[A]): Gen[List[A]] = listOfN(n max 1, g)
   // Ex 8.4
   def choose(start: Int, stopExclusive: Int): Gen[Int] = 
     Gen(State(RNG.nonNegativeInt).map( n=> n % (stopExclusive-start)+start))
@@ -128,7 +149,8 @@ case class Gen[A](sample: State[RNG,A]) {
   def listOfN(size: Gen[Int]): Gen[List[A]] = size.flatMap(Gen.listOfN(_,this))
     // Ex 8.10
   def unsized: SGen[A] = SGen(_ => this)
-
+  // Ex8.13
+  def listOf1(size: Gen[Int]): Gen[List[A]] = size.flatMap(Gen.listOf1(_,this))
 }
 
 case class SGen[+A](forSize: Int => Gen[A]) {
@@ -150,6 +172,8 @@ object SGen {
    n => g.listOfN { Gen.unit(n) }
   )
 }
+
+
 
 
 
